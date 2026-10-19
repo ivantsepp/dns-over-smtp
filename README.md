@@ -68,15 +68,21 @@ Record types are case-insensitive; AAAA, MX, TXT, CAA and URI work too. ANY and 
 
 For manual Gmail tests, the short form above avoids copying a binary packet. Machine queries also accept line breaks between the request ID and payload, and spaces, tabs or line breaks inside the base64. The receiver reads the decoded plain-text MIME part; a duplicate HTML representation is ignored. A payload is never assembled from different MIME parts.
 
-The expected result is a **failed-delivery notification**. Its remote-server diagnostic contains `DNS-RESPONSE:`, a request ID, and a base64 DNS packet. Short A/AAAA answers also have a readable summary, such as `[NOERROR A=192.0.2.42]`. A negative DNS answer appears as `[NXDOMAIN]`; the SMTP rejection is intentional in either case.
+The expected result is a **failed-delivery notification**. For a human-readable query, its remote-server diagnostic contains readable DNS records, for example:
 
-Save the complete bounce as an `.eml` file to inspect all returned records:
+```text
+550 5.0.0 DNS answer: example.com. A; status=NOERROR; example.com. 60 IN A 192.0.2.42
+```
+
+The address above is illustrative. Each record shows its name, TTL, class, type, and value. MX, TXT, CAA and other record types are readable too. Empty answers say `no answers` and include the DNS status, such as `NOERROR`, `NXDOMAIN` or `SERVFAIL`. Answers may also include labeled authority and additional records. If the text cannot fit in the SMTP reply, only complete records that fit are shown, followed by `[truncated]`. The SMTP rejection is intentional for successful and unsuccessful DNS lookups alike. Restart or redeploy the server after updating it to use this response format.
+
+Machine queries using `DNS-QUERY: <request-id> <base64>` still receive `DNS-RESPONSE: <request-id> <base64>` and an optional short summary. Save their complete bounce as an `.eml` file to inspect all returned records:
 
 ```sh
 ./dns-over-smtp -mode=decode -bounce-file=bounce.eml
 ```
 
-For saved bounce mail, the decoder reads SMTP `Diagnostic-Code` fields inside a `message/delivery-status` MIME part, including folded base64. Use the complete `.eml`; attached original messages are never treated as answers. Saved outgoing query `.eml` files can also be decoded through their plain-text MIME part.
+For saved machine-query bounce mail, the decoder reads SMTP `Diagnostic-Code` fields inside a `message/delivery-status` MIME part, including folded base64. Use the complete `.eml`; attached original messages are never treated as answers. Saved outgoing query `.eml` files can also be decoded through their plain-text MIME part. Human-readable answers can be read directly and do not need the base64 decoder.
 
 ## Decode a Wireshark capture or base64 payload
 
@@ -148,13 +154,15 @@ DNS-QUERY: <32-character-random-hex-id>
 
 The receiver also accepts the original single-line form. Whitespace inside the base64 is ignored within that MIME part. The client emits short lines because email software may rewrap body text; the email format recommends a maximum of 78 characters per line ([RFC 5322](https://www.rfc-editor.org/rfc/rfc5322.html#section-2.1.1)). Restart or redeploy an already-running SMTP receiver after rebuilding to pick up the new parser.
 
-The final server response is a single SMTP reply line:
+For machine queries, the final server response is a single SMTP reply line:
 
 ```text
 550 5.0.0 DNS-RESPONSE: <same-id> <base64-DNS-response> [optional-readable-summary]
 ```
 
-DNS replies are compressed and capped at **300 wire bytes** to keep the complete SMTP line below 512 bytes. Larger answers lose complete record sets and carry the DNS truncation flag. This prototype has no mechanism to recover a larger answer by retrying; the local DNS proxy currently supports UDP only. Upstream UDP truncation is retried over TCP before applying the bounce size cap. Resolver failures are returned as encoded SERVFAIL responses.
+Text queries (`A example.com`, `example.com`, or the legacy `DNS-QUERY: A example.com`) receive the readable diagnostic shown above, without a base64 packet or request ID. Response format follows the query inside the decoded MIME body, regardless of the email's content-transfer encoding.
+
+Both response formats keep the complete SMTP line within **512 bytes**. Machine DNS replies are compressed and capped at **300 wire bytes**; larger answers lose complete record sets and carry the DNS truncation flag. Human-readable replies instead fit complete textual records within the SMTP line budget and mark omitted records or upstream truncation with `[truncated]`. This prototype has no mechanism to recover a larger answer by retrying; the local DNS proxy currently supports UDP only. Upstream UDP truncation is retried over TCP before formatting the bounce. Resolver failures are returned as SERVFAIL in the request's response format.
 
 The automated client correlates both the random request ID and DNS transaction/question fields. These checks prevent mixups, but do not authenticate answers cryptographically. Queries and replies are visible to mail infrastructure.
 

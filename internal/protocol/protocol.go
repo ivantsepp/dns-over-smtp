@@ -100,11 +100,27 @@ func EncodeQuery(m *dns.Msg, id string) (string, error) {
 	return body.String(), nil
 }
 
-// ParseQuery accepts tagged queries or a first-line "A example.com" / "example.com".
+// Request retains whether the sender used text or a correlated wire query.
+type Request struct {
+	Query         *dns.Msg
+	ID            string
+	HumanReadable bool
+}
+
+// ParseQuery returns the DNS packet and ID for offline inspection.
 func ParseQuery(raw []byte) (*dns.Msg, string, error) {
-	parts, err := emailParts(raw)
+	request, err := ParseRequest(raw)
 	if err != nil {
 		return nil, "", err
+	}
+	return request.Query, request.ID, nil
+}
+
+// ParseRequest accepts tagged queries or a first-line "A example.com" / "example.com".
+func ParseRequest(raw []byte) (*Request, error) {
+	parts, err := emailParts(raw)
+	if err != nil {
+		return nil, err
 	}
 	var firstLines []string
 	for _, p := range parts {
@@ -123,9 +139,9 @@ func ParseQuery(raw []byte) (*dns.Msg, string, error) {
 	if len(firstLines) > 0 && !strings.HasPrefix(firstLines[0], "DNS-QUERY:") {
 		if query, id, err := parseBareQuery(firstLines[0]); err == nil {
 			if len(firstLines) != 1 {
-				return nil, "", errors.New("expected one nonempty plain-text query body")
+				return nil, errors.New("expected one nonempty plain-text query body")
 			}
-			return query, id, nil
+			return &Request{Query: query, ID: id, HumanReadable: true}, nil
 		}
 	}
 	var queryText string
@@ -139,7 +155,7 @@ func ParseQuery(raw []byte) (*dns.Msg, string, error) {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "DNS-QUERY:") {
 				if found {
-					return nil, "", errors.New("multiple DNS queries in message")
+					return nil, errors.New("multiple DNS queries in message")
 				}
 				found = true
 				head := strings.TrimPrefix(line, "DNS-QUERY:")
@@ -149,17 +165,23 @@ func ParseQuery(raw []byte) (*dns.Msg, string, error) {
 	}
 	if !found {
 		if len(firstLines) != 1 {
-			return nil, "", errors.New("expected one nonempty plain-text query body")
+			return nil, errors.New("expected one nonempty plain-text query body")
 		}
-		return parseBareQuery(firstLines[0])
+		query, id, err := parseBareQuery(firstLines[0])
+		if err != nil {
+			return nil, err
+		}
+		return &Request{Query: query, ID: id, HumanReadable: true}, nil
 	}
 	fields := strings.Fields(queryText)
 	if len(fields) < 2 {
-		return nil, "", errors.New("expected DNS-QUERY: <request-id> <base64> or <type> <name>")
+		return nil, errors.New("expected DNS-QUERY: <request-id> <base64> or <type> <name>")
 	}
 	m := new(dns.Msg)
 	id := fields[0]
+	humanReadable := false
 	if qtype, ok := dns.StringToType[strings.ToUpper(fields[0])]; ok {
+		humanReadable = true
 		var declaration []string
 		for _, line := range strings.Split(queryText, "\n") {
 			declaration = append(declaration, strings.Fields(line)...)
@@ -168,23 +190,26 @@ func ParseQuery(raw []byte) (*dns.Msg, string, error) {
 			}
 		}
 		if len(declaration) != 2 {
-			return nil, "", errors.New("expected DNS-QUERY: <type> <name>")
+			return nil, errors.New("expected DNS-QUERY: <type> <name>")
 		}
 		m.SetQuestion(dns.Fqdn(fields[1]), qtype)
 		id, err = NewID()
 		if err != nil {
-			return nil, "", err
+			return nil, err
 		}
 	} else {
 		if !validID(id) {
-			return nil, "", errors.New("invalid or oversized query payload")
+			return nil, errors.New("invalid or oversized query payload")
 		}
 		m, err = DecodePayload(strings.Join(fields[1:], " "), MaxQueryBytes)
 		if err != nil {
-			return nil, "", err
+			return nil, err
 		}
 	}
-	return m, id, ValidateQuery(m)
+	if err := ValidateQuery(m); err != nil {
+		return nil, err
+	}
+	return &Request{Query: m, ID: id, HumanReadable: humanReadable}, nil
 }
 
 func parseBareQuery(line string) (*dns.Msg, string, error) {

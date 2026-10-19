@@ -153,22 +153,27 @@ func (s *session) Data(r io.Reader) error {
 	if !s.server.allow(s.peer) {
 		return reject("DNS query rate limit exceeded")
 	}
-	query, id, err := protocol.ParseQuery(raw)
+	request, err := protocol.ParseRequest(raw)
 	if err != nil {
 		slog.Info("smtp_invalid_query_rejected")
 		return reject("Invalid DNS query; put A example.com or example.com in the email body")
 	}
-	response, err := s.server.Resolve(query)
+	response, err := s.server.Resolve(request.Query)
 	if err != nil {
-		slog.Warn("dns_upstream_failure", "request_id", id)
+		slog.Warn("dns_upstream_failure", "request_id", request.ID)
 		response = new(dns.Msg)
-		response.SetRcode(query, dns.RcodeServerFailure)
+		response.SetRcode(request.Query, dns.RcodeServerFailure)
 	}
-	diagnostic, err := protocol.EncodeResponse(response, id)
+	var diagnostic string
+	if request.HumanReadable {
+		diagnostic, err = protocol.FormatHumanResponse(response)
+	} else {
+		diagnostic, err = protocol.EncodeResponse(response, request.ID)
+	}
 	if err != nil {
 		return reject("DNS answer cannot fit in a bounce")
 	}
-	slog.Info("smtp_dns_answer_rejected", "request_id", id, "rcode", response.Rcode)
+	slog.Info("smtp_dns_answer_rejected", "request_id", request.ID, "rcode", response.Rcode)
 	return reject(diagnostic)
 }
 

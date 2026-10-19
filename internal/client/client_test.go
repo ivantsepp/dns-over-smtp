@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net"
@@ -30,8 +31,20 @@ func localBounceServer(t *testing.T) string {
 		m.SetReply(q)
 		if q.Question[0].Name == "missing.test." {
 			m.Rcode = dns.RcodeNameError
-		} else {
-			m.Answer = []dns.RR{&dns.A{Hdr: dns.RR_Header{Name: q.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: net.ParseIP("192.0.2.42")}}
+		} else if q.Question[0].Name != "empty.test." {
+			rdata := map[uint16]string{
+				dns.TypeA:    "A 192.0.2.42",
+				dns.TypeAAAA: "AAAA 2001:db8::42",
+				dns.TypeMX:   "MX 10 mail.example.test.",
+				dns.TypeTXT:  `TXT "hello  world"`,
+				dns.TypeCAA:  `CAA 0 issue "ca.example.test"`,
+			}[q.Question[0].Qtype]
+			rr, err := dns.NewRR(q.Question[0].Name + " 60 IN " + rdata)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			m.Answer = []dns.RR{rr}
 		}
 		w.WriteMsg(m)
 	})}
@@ -145,8 +158,10 @@ func TestBareQueryFinalDATARejection(t *testing.T) {
 		body, name string
 		rcode      int
 	}{
+		{"A tseivan.com", "tseivan.com.", dns.RcodeSuccess},
 		{"A one.test", "one.test.", dns.RcodeSuccess},
 		{"one.test", "one.test.", dns.RcodeSuccess},
+		{"DNS-QUERY: A one.test", "one.test.", dns.RcodeSuccess},
 		{"\r\n one.test. \r\n\r\n-- \r\nExample Sender", "one.test.", dns.RcodeSuccess},
 		{"A one.test\r\n\r\n-- \r\nDNS-QUERY: A other.test", "one.test.", dns.RcodeSuccess},
 		{"missing.test", "missing.test.", dns.RcodeNameError},
@@ -156,16 +171,46 @@ func TestBareQueryFinalDATARejection(t *testing.T) {
 		if !errors.As(err, &rejection) || rejection.Code != 550 {
 			t.Fatalf("expected final rejection for %q: %v", tc.body, err)
 		}
-		answer, err := protocol.ParseResponse(rejection.Msg, "")
-		if err != nil {
-			t.Fatal(err)
+		if strings.Contains(rejection.Msg, "DNS-RESPONSE:") {
+			t.Fatalf("human query returned a base64 wire response: %s", rejection.Msg)
 		}
-		if answer.Question[0].Name != tc.name || answer.Question[0].Qtype != dns.TypeA || answer.Rcode != tc.rcode {
-			t.Fatalf("wrong answer: %s", answer)
+		for _, want := range []string{"DNS answer: " + tc.name + " A", "status=" + dns.RcodeToString[tc.rcode]} {
+			if !strings.Contains(rejection.Msg, want) {
+				t.Fatalf("manual reply missing %q: %s", want, rejection.Msg)
+			}
 		}
-		if tc.rcode == dns.RcodeSuccess && (len(answer.Answer) != 1 || answer.Answer[0].(*dns.A).A.String() != "192.0.2.42") {
-			t.Fatalf("lost manual query result: %s", answer)
+		if tc.rcode == dns.RcodeSuccess && !strings.Contains(rejection.Msg, "A 192.0.2.42") {
+			t.Fatalf("lost manual query result: %s", rejection.Msg)
 		}
+		if len("550 "+rejection.Msg+"\r\n") > 512 || strings.ContainsAny(rejection.Msg, "\r\n") {
+			t.Fatalf("invalid SMTP reply: %q", rejection.Msg)
+		}
+	}
+}
+
+func TestHumanRecordTypesAndMIMEFinalDATARejection(t *testing.T) {
+	addr := localBounceServer(t)
+	for _, tc := range []struct {
+		name, mail, want string
+	}{
+		{"AAAA", "\r\nAAAA example.test", "AAAA 2001:db8::42"},
+		{"MX", "\r\nMX example.test", "MX 10 mail.example.test."},
+		{"TXT", "\r\nTXT example.test", `TXT "hello  world"`},
+		{"CAA", "\r\nCAA example.test", `CAA 0 issue "ca.example.test"`},
+		{"NODATA", "\r\nA empty.test", "status=NOERROR; no answers"},
+		{"MIME base64 text", "Content-Transfer-Encoding: base64\r\n\r\n" + base64.StdEncoding.EncodeToString([]byte("MX example.test")), "MX 10 mail.example.test."},
+		{"MIME alternative", "Content-Type: multipart/alternative; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nMX example.test\r\n--b\r\nContent-Type: text/html\r\n\r\n<p>A ignored.test</p>\r\n--b--", "MX 10 mail.example.test."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := smtp.SendMail(addr, nil, "user@local.test", []string{"dns@localhost"}, []byte("Subject: arbitrary\r\n"+tc.mail+"\r\n"))
+			var rejection *textproto.Error
+			if !errors.As(err, &rejection) || rejection.Code != 550 {
+				t.Fatalf("expected final rejection: %v", err)
+			}
+			if !strings.Contains(rejection.Msg, "DNS answer:") || !strings.Contains(rejection.Msg, tc.want) || strings.Contains(rejection.Msg, "DNS-RESPONSE:") {
+				t.Fatalf("wrong human response: %s", rejection.Msg)
+			}
+		})
 	}
 }
 
