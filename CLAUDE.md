@@ -13,6 +13,8 @@ gofmt -s -w main.go internal/
 
 CI uses Go 1.27.2 from `go.mod`, runs tests/build/vet, and checks formatting. Keep tests offline: in-process loopback SMTP/DNS/TLS-IMAP fixtures are available in the client tests. Never send real provider emails during tests.
 
+Build distributable binaries with the Makefile's explicit `CGO_ENABLED=0` recipes. CI uses `make build-all`, tests the cgo-disabled configuration too, and verifies that the Linux artifact is statically linked. Preserve that check: native Linux CI builds otherwise inherit the runner's glibc requirements and can fail on older Oracle Linux VMs.
+
 ## Architecture
 
 - `main.go`: client/server/query/decode CLI modes.

@@ -31,6 +31,9 @@ jobs:
     
     - name: Run tests
       run: go test -v ./...
+
+    - name: Run tests without cgo
+      run: CGO_ENABLED=0 go test ./...
     
     - name: Build
       run: go build -v ./...
@@ -59,10 +62,10 @@ jobs:
         go-version-file: go.mod
     
     - name: Build for multiple platforms
-      run: |
-        GOOS=linux GOARCH=amd64 go build -o dns-over-smtp-linux-amd64 ./main.go
-        GOOS=darwin GOARCH=amd64 go build -o dns-over-smtp-darwin-amd64 ./main.go
-        GOOS=windows GOARCH=amd64 go build -o dns-over-smtp-windows-amd64.exe ./main.go
+      run: make build-all
+
+    - name: Verify portable Linux binary
+      run: file dns-over-smtp-linux-amd64 | grep 'statically linked'
     
     - name: Upload artifacts
       uses: actions/upload-artifact@v4

@@ -5,9 +5,9 @@
 # Binary name
 BINARY_NAME=dns-over-smtp
 
-# Build the application
+# Build without cgo so Linux binaries do not depend on the builder's glibc.
 build:
-	go build -o $(BINARY_NAME) ./main.go
+	CGO_ENABLED=0 go build -o $(BINARY_NAME) ./main.go
 
 # Install dependencies
 deps:
@@ -31,7 +31,7 @@ clean:
 
 # Install the binary
 install: build
-	go install
+	CGO_ENABLED=0 go install
 
 # Run client example (requires configuration)
 run-client:
@@ -68,9 +68,9 @@ check: fmt test lint sec
 
 # Build for multiple platforms
 build-all:
-	GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME)-linux-amd64 ./main.go
-	GOOS=darwin GOARCH=amd64 go build -o $(BINARY_NAME)-darwin-amd64 ./main.go
-	GOOS=windows GOARCH=amd64 go build -o $(BINARY_NAME)-windows-amd64.exe ./main.go
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME)-linux-amd64 ./main.go
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o $(BINARY_NAME)-darwin-amd64 ./main.go
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o $(BINARY_NAME)-windows-amd64.exe ./main.go
 
 # Development server with auto-reload (requires air)
 dev:

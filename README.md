@@ -10,9 +10,13 @@ Use the Go version required by [go.mod](go.mod) or newer:
 
 ```sh
 go mod download
-go build -o dns-over-smtp .
+make build
 go test ./...
 ```
+
+`make build` and `make build-all` disable cgo. Linux binaries are statically linked, so they do not require the build machine's glibc version. CI uses the same `make build-all` recipe and checks that the Linux artifact is statically linked before uploading it.
+
+To use a CI build, open a successful run under GitHub **Actions**, download and extract the **binaries** artifact, then copy `dns-over-smtp-linux-amd64` to an `x86_64` Linux VM. Run `chmod +x dns-over-smtp-linux-amd64` before starting it. If an older artifact reports a missing `GLIBC_...` version, replace it with a build from the updated workflow.
 
 ## Try it locally
 
