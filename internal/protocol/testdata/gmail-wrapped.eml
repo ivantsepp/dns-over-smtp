@@ -1,0 +1,21 @@
+MIME-Version: 1.0
+Date: Thu, 15 Oct 2026 22:38:21 -0400
+Message-ID: <gmail-wrapping-fixture@example.test>
+Subject: wrapping regression
+From: Example Sender <sender@example.test>
+To: dns@receiver.example.test
+Content-Type: multipart/alternative; boundary="000000000000c5d331065dec0e13"
+
+--000000000000c5d331065dec0e13
+Content-Type: text/plain; charset="UTF-8"
+
+DNS-QUERY: 199fdc8b9f90dd76d04a4669a1e5497b
+V7UBAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE=
+
+--000000000000c5d331065dec0e13
+Content-Type: text/html; charset="UTF-8"
+
+<div dir="ltr"><div dir="ltr">DNS-QUERY: 199fdc8b9f90dd76d04a4669a1e5497b V7UBAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE=</div>
+</div>
+
+--000000000000c5d331065dec0e13--

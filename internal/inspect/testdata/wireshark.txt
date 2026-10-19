@@ -1,0 +1,36 @@
+220 localhost ESMTP Service Ready
+
+EHLO localhost
+
+250-Hello localhost
+250-PIPELINING
+250-8BITMIME
+250-ENHANCEDSTATUSCODES
+250-CHUNKING
+250-SIZE 65536
+250 LIMITS RCPTMAX=1
+
+MAIL FROM:<you@local.test> BODY=8BITMIME
+
+250 2.0.0 Roger, accepting mail from <you@local.test>
+
+RCPT TO:<dns@localhost>
+
+250 2.0.0 I'll make sure <dns@localhost> gets this
+
+DATA
+
+354 Go ahead. End your data with <CR><LF>.<CR><LF>
+
+From: you@local.test
+To: dns@localhost
+Subject: DNS Query 199fdc8b9f90dd76d04a4669a1e5497b
+Message-ID: <199fdc8b9f90dd76d04a4669a1e5497b@dns-over-smtp.invalid>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+DNS-QUERY: 199fdc8b9f90dd76d04a4669a1e5497b V7UBAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE=
+.
+
+550 5.0.0 DNS-RESPONSE: 199fdc8b9f90dd76d04a4669a1e5497b V7WBgAABAAIAAAAAB2V4YW1wbGUDY29tAAABAAHADAABAAEAAAEsAARoFBeawAwAAQABAAABLAAErEKT8w== [NOERROR A=104.20.23.154]
